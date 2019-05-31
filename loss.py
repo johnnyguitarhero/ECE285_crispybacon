@@ -1,7 +1,32 @@
 from math import sqrt
 
 
-def criterion(self, y, d):
+class ImageOutput:
+    def __init__(self, y, S, B, C):
+        self.cells = list()
+        for i in range(S):
+            for j in range(S):
+                t = y[i][j]
+                label_for_this_cell = dict()
+                #  t is a vector with length 30
+                label_for_this_cell['C'] = t[:C]
+                label_for_this_cell['boxes'] = list()
+                label_for_this_cell['boxes'].append(dict())
+                label_for_this_cell['boxes'].append(dict())
+                label_for_this_cell['boxes'][0]['p_obj'] = t[20]
+                label_for_this_cell['boxes'][1]['p_obj'] = t[21]
+                label_for_this_cell['boxes'][0]['w'] = t[22]
+                label_for_this_cell['boxes'][0]['h'] = t[23]
+                label_for_this_cell['boxes'][0]['x'] = t[24]
+                label_for_this_cell['boxes'][0]['y'] = t[25]
+                label_for_this_cell['boxes'][1]['w'] = t[26]
+                label_for_this_cell['boxes'][1]['h'] = t[27]
+                label_for_this_cell['boxes'][1]['x'] = t[28]
+                label_for_this_cell['boxes'][1]['y'] = t[29]
+                self.cells.append(label_for_this_cell)
+
+
+def criterion(y, d):
     # y is the network output for a mini-batch, and dd is the corresponding labels.
     batch_size = len(y)
 
@@ -16,14 +41,14 @@ def criterion(self, y, d):
     return sum_loss / (1.0 * batch_size)
 
 
-def get_loss_for_one_image(self, y, d):
+def get_loss_for_one_image(y, d):
     # y is the network output for one image, and d is the corresponding label.
     loss = 0
     S = 7  # S x S cells in one image
     B = 2  # B sub-boxex in one cell
     C = 20  # C classes to classify
     yy = ImageOutput(y, S, B, C)
-    dd = ImageOutput(d, S, 1, C)
+    dd = ImageOutput(d, S, B, C)
 
     for i in range(S*S):
         loss += get_loss_for_one_cell(yy.cells[i], dd.cells[i])
@@ -31,7 +56,7 @@ def get_loss_for_one_image(self, y, d):
     return loss
 
 
-def get_loss_for_one_cell(self, y_cell, d_cell):
+def get_loss_for_one_cell(y_cell, d_cell):
     # Here is a detailed explanation for loss:
     # https://medium.com/@jonathan_hui/real-time-object-detection-with-yolo-yolov2-28b1b93e2088
 
@@ -46,6 +71,7 @@ def get_loss_for_one_cell(self, y_cell, d_cell):
         has_object_in_this_cell = True
 
     responsible_box = get_responsible_box(y_cell['boxes'], d_cell['boxes'])
+    print(responsible_box)
 
     # localization loss
     if has_object_in_this_cell:
@@ -87,8 +113,8 @@ def get_loss_for_one_cell(self, y_cell, d_cell):
     return localization_loss + confidence_loss + classification_loss
 
 
-def get_responsible_box(self, y_boxes, d_boxes):
-    max_iou = 0
+def get_responsible_box(y_boxes, d_boxes):
+    max_iou = -1
     max_iou_box = None
     d_box = (d_boxes[0]['x'], d_boxes[0]['y'], d_boxes[0]['w'], d_boxes[0]['h'])
     for box in y_boxes:
@@ -100,29 +126,62 @@ def get_responsible_box(self, y_boxes, d_boxes):
     return max_iou_box
 
 
-def compute_iou(box1, box2):
-    pass
+def compute_iou(rec1, rec2):
+    
+    """
+    computing IoU
+    :param rec1: (y0, x0, y1, x1), which reflects
+            (top, left, bottom, right)
+    :param rec2: (y0, x0, y1, x1)
+    :return: scala value of IoU
+    """
+    # computing area of each rectangles
+    S_rec1 = (rec1[2] - rec1[0]) * (rec1[3] - rec1[1])
+    S_rec2 = (rec2[2] - rec2[0]) * (rec2[3] - rec2[1])
+ 
+    # computing the sum_area
+    sum_area = S_rec1 + S_rec2
+ 
+    # find the each edge of intersect rectangle
+    left_line = max(rec1[1], rec2[1])
+    right_line = min(rec1[3], rec2[3])
+    top_line = max(rec1[0], rec2[0])
+    bottom_line = min(rec1[2], rec2[2])
+ 
+    # judge if there is an intersect
+    if left_line >= right_line or top_line >= bottom_line:
+        return 0
+    else:
+        intersect = (right_line - left_line) * (bottom_line - top_line)
+        return intersect / (sum_area - intersect)
 
 
-class ImageOutput:
-    def __init__(self, y, S, B, C):
-        self.cells = list()
-        for i in range(S):
-            for j in range(S):
-                t = y[i][j]
-                label_for_this_cell = dict()
-                #  t is a vector with length 30
-                label_for_this_cell['C'] = y[:C]
-                label_for_this_cell['boxes'][0] = dict()
-                label_for_this_cell['boxes'][1] = dict()
-                label_for_this_cell['boxes'][0]['p_obj'] = y[20]
-                label_for_this_cell['boxes'][1]['p_obj'] = y[21]
-                label_for_this_cell['boxes'][0]['w'] = y[22]
-                label_for_this_cell['boxes'][0]['h'] = y[23]
-                label_for_this_cell['boxes'][0]['x'] = y[24]
-                label_for_this_cell['boxes'][0]['y'] = y[25]
-                label_for_this_cell['boxes'][1]['w'] = y[26]
-                label_for_this_cell['boxes'][1]['h'] = y[27]
-                label_for_this_cell['boxes'][1]['x'] = y[28]
-                label_for_this_cell['boxes'][1]['y'] = y[29]
-                self.cells.append(label_for_this_cell)
+
+'''
+    Encode boxes and labels to 7x7x30 tensor. For each area, the 30 len tensor has such structure:
+    [ 20(class label) | 1(C) | 1(C) | 4(width, height, center_w, center_h, and all are ratio) | 4(the same) ]
+'''
+
+yyy = [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
+ddd = [0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+
+yy = list()
+dd = list()
+
+for i in range(7):
+    y = list()
+    d = list()
+    for j in range(7):
+        y.append(yyy)
+        d.append(ddd)
+    yy.append(y)
+    dd.append(d)
+
+# print(len(yy))
+# print(len(yy[0]))
+# print(len(yy[0][0]))
+
+ret = get_loss_for_one_image(yy, dd)
+print(ret)
+
+
